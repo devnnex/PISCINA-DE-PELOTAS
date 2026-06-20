@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Piscina de Pelotas</title>
+    <!-- Apple-like Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Phosphor Icons for elegant UI -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="global-loader" class="global-loader" style="display: none;">
+        <div class="triangle-loader">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+    </div>
+
+    <main id="login-view" class="login-view">
+        <form id="login-form" class="login-card">
+            <img src="images/logo.png" alt="Logo Piscina de Pelotas" class="login-logo">
+            <h1 id="login-title">PISCINA DE PELOTAS</h1>
+            <p id="login-subtitle">Ingresa para gestionar tiempos, registros e ingresos.</p>
+            <div class="form-group">
+                <label>Correo</label>
+                <input type="email" id="login-email" required placeholder="correo@empresa.com">
+            </div>
+            <div class="form-group">
+                <label>Contraseña</label>
+                <input type="password" id="login-password" required placeholder="Tu contraseña">
+            </div>
+            <button type="submit" class="btn btn-primary" id="login-submit">Entrar</button>
+            <small id="login-error" class="login-error"></small>
+        </form>
+    </main>
+
+    <div id="app-container">
+        <!-- Tab Navigation -->
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-target="home-view">
+                <i class="ph ph-timer"></i>
+                <span>Tiempos</span>
+            </button>
+            <button class="nav-btn" data-target="admin-view">
+                <i class="ph ph-chart-bar"></i>
+                <span>Administración</span>
+            </button>
+        </nav>
+
+        <!-- Home View (Timers) -->
+        <main id="home-view" class="view active">
+            <header class="app-header">
+                <div class="brand-lockup">
+                    <img src="images/logo.png" alt="Logo Piscina de Pelotas" class="app-logo">
+                    <h1>PISCINA DE PELOTAS</h1>
+                </div>
+                <div class="header-actions">
+                    <button id="theme-toggle-btn" class="icon-btn subtle" aria-label="Cambiar modo">
+                        <i class="ph ph-moon"></i>
+                    </button>
+                    <button id="add-kid-btn" class="icon-btn" aria-label="Agregar niño">
+                        <i class="ph ph-plus"></i>
+                    </button>
+                </div>
+            </header>
+
+            <div class="registration-form-container" id="reg-form-container" style="display: none;">
+                <form id="add-kid-form" class="card form-card">
+                    <h2>Nuevo Ingreso</h2>
+                    <div class="form-group">
+                        <label>Nombre del Niño</label>
+                        <input type="text" id="kid-name" required placeholder="Ej. Juan Pérez">
+                    </div>
+                    <div class="form-group">
+                        <label>Nombre del Padre/Madre</label>
+                        <input type="text" id="parent-name" required placeholder="Ej. María Gómez">
+                    </div>
+                    <div class="form-group">
+                        <label>Teléfono</label>
+                        <input type="tel" id="parent-phone" required placeholder="Ej. 300 123 4567">
+                    </div>
+                    <div class="form-group">
+                        <label>Tiempo y Valor</label>
+                        <select id="time-select" required>
+                            <option value="15|5000">15 Minutos - $5.000</option>
+                            <option value="30|8000" selected>30 Minutos - $8.000</option>
+                            <option value="60|15000">1 Hora - $15.000</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancel-add">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Iniciar Tiempo</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="active-kids-section">
+                <div class="section-title-row">
+                    <h2>Niños en la Piscina (<span id="active-count">0</span>)</h2>
+                    <div class="section-title-actions">
+                        <button id="select-expired-btn" class="selection-trigger" type="button">
+                            <i class="ph ph-check-square-offset"></i> Seleccionar vencidos
+                        </button>
+                        <span id="active-page-summary" class="page-summary"></span>
+                    </div>
+                </div>
+                <div id="batch-action-bar" class="batch-action-bar" hidden>
+                    <div><strong id="selected-expired-count">0</strong><span> seleccionados</span></div>
+                    <div class="batch-actions">
+                        <button id="cancel-selection-btn" class="btn btn-secondary" type="button">Cancelar</button>
+                        <button id="finish-selected-btn" class="btn btn-primary" type="button"><i class="ph ph-check-circle"></i> Confirmar todos</button>
+                    </div>
+                </div>
+                <div id="sync-status" class="sync-status" hidden></div>
+                <div class="search-bar active-search-bar">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input type="text" id="active-search-input" placeholder="Buscar niño, padre o teléfono...">
+                </div>
+                <div id="active-kids-grid" class="kids-grid">
+                    <!-- Cards will be injected here by JS -->
+                </div>
+                <div id="active-pagination" class="pagination-controls"></div>
+            </div>
+        </main>
+
+        <!-- Admin View -->
+        <main id="admin-view" class="view">
+            <header class="app-header">
+                <h1>Panel Administrativo</h1>
+                <div class="header-actions">
+                    <button id="admin-theme-toggle-btn" class="icon-btn subtle" aria-label="Cambiar modo">
+                        <i class="ph ph-moon"></i>
+                    </button>
+                <button id="logout-btn" class="icon-btn subtle" aria-label="Cerrar sesión">
+                    <i class="ph ph-sign-out"></i>
+                </button>
+                </div>
+            </header>
+
+            <div class="admin-dashboard">
+                <div class="stats-container">
+                    <div class="stat-card">
+                        <i class="ph ph-coins text-dark-blue"></i>
+                        <div class="stat-info">
+                            <span class="stat-label">Ingresos del Periodo</span>
+                            <span class="stat-value" id="total-income">$0</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="ph ph-users text-red"></i>
+                        <div class="stat-info">
+                            <span class="stat-label">Niños Atendidos</span>
+                            <span class="stat-value" id="total-kids-served">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="history-section">
+                    <div class="history-header">
+                        <div>
+                            <h2>Historial de Registros</h2>
+                            <p class="history-subtitle">Exporta los registros filtrados en PDF o Excel.</p>
+                        </div>
+                        <div class="history-export-actions">
+                            <button id="export-history-pdf" class="export-btn" type="button">
+                                <i class="ph ph-file-pdf"></i> PDF
+                            </button>
+                            <button id="export-history-excel" class="export-btn" type="button">
+                                <i class="ph ph-file-xls"></i> Excel
+                            </button>
+                        </div>
+                    </div>
+                    <div class="filters-section">
+                        <div class="search-bar">
+                            <i class="ph ph-magnifying-glass"></i>
+                            <input type="text" id="search-input" placeholder="Buscar por nombre o teléfono...">
+                        </div>
+                        <div class="date-filters">
+                            <button class="filter-btn active" data-filter="today">Hoy</button>
+                            <button class="filter-btn" data-filter="yesterday">Ayer</button>
+                            <button class="filter-btn" data-filter="7days">7 Días</button>
+                            <button class="filter-btn" data-filter="15days">15 Días</button>
+                            <button class="filter-btn" data-filter="30days">30 Días</button>
+                            <button class="filter-btn" data-filter="all">Todos</button>
+                        </div>
+                    </div>
+                    <div id="history-list" class="history-list">
+                        <!-- History items injected here -->
+                    </div>
+                </div>
+
+                <div class="users-section">
+                    <button id="users-toggle" class="users-toggle" type="button">
+                        <span><i class="ph ph-user-gear"></i> Gestionar usuarios</span>
+                        <i class="ph ph-caret-down"></i>
+                    </button>
+                    <div id="users-panel" class="users-panel">
+                        <form id="user-form" class="user-form">
+                            <input type="email" id="user-email" required placeholder="correo@empresa.com">
+                            <input type="password" id="user-password" required placeholder="Contraseña">
+                            <button type="submit" class="btn btn-primary">Crear usuario</button>
+                        </form>
+                        <div id="users-list" class="users-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="assistant-launcher" class="assistant-launcher" type="button" aria-label="Abrir Assistente">
+                <span class="assistant-orb"><i class="ph ph-sparkle"></i></span>
+                <span>Assistente</span>
+                <span id="assistant-live-dot" class="live-dot"></span>
+            </button>
+
+            <aside id="assistant-panel" class="assistant-panel" aria-hidden="true">
+                <header class="assistant-header">
+                    <div><span class="eyebrow">CENTRO DE INTELIGENCIA</span><h2>Assistente</h2></div>
+                    <button id="assistant-close" class="icon-btn subtle" type="button" aria-label="Cerrar"><i class="ph ph-x"></i></button>
+                </header>
+                <div class="assistant-tools" aria-label="Acciones rápidas">
+                    <button type="button" data-assistant-action="summary"><i class="ph ph-chart-line-up"></i><span>Resumen</span></button>
+                    <button type="button" data-assistant-action="active"><i class="ph ph-timer"></i><span>En piscina</span></button>
+                    <button type="button" data-assistant-action="income"><i class="ph ph-coins"></i><span>Ingresos</span></button>
+                    <button type="button" data-assistant-action="invoice"><i class="ph ph-printer"></i><span>Factura</span></button>
+                </div>
+                <div id="assistant-messages" class="assistant-messages" aria-live="polite"></div>
+                <form id="assistant-form" class="assistant-form">
+                    <input id="assistant-input" type="text" autocomplete="off" placeholder="Pregunta sobre la operación..." required>
+                    <button type="submit" aria-label="Enviar"><i class="ph ph-arrow-up"></i></button>
+                </form>
+                <small class="assistant-disclaimer">Responde con la información disponible en este sistema.</small>
+            </aside>
+        </main>
+
+        <!-- Edit Modal -->
+        <div id="edit-modal" class="modal-overlay" style="display: none;">
+            <div class="modal-content card">
+                <h2>Editar Registro</h2>
+                <form id="edit-kid-form">
+                    <input type="hidden" id="edit-id">
+                    <div class="form-group">
+                        <label>Nombre del Niño</label>
+                        <input type="text" id="edit-kid-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Nombre del Padre/Madre</label>
+                        <input type="text" id="edit-parent-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Teléfono</label>
+                        <input type="tel" id="edit-parent-phone" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Tiempo Extra (Minutos)</label>
+                        <input type="number" id="edit-extra-time" value="0" min="0">
+                        <small>Añade tiempo extra sin cambiar el precio pagado.</small>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancel-edit">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar Cambios</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
