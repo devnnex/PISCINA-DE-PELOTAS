@@ -11,10 +11,11 @@ const DEFAULT_SERVICES = [
 ];
 const cachedApp = JSON.parse(localStorage.getItem(APP_CACHE_KEY) || '{}');
 let runtimePushPublicKey = PUSH_PUBLIC_KEY;
+const USE_LOCAL_RECORD_CACHE = !API_URL.trim();
 
 // State Management
 let appState = {
-    records: cachedApp.records || JSON.parse(localStorage.getItem('piscinaRecords')) || [],
+    records: USE_LOCAL_RECORD_CACHE ? (cachedApp.records || JSON.parse(localStorage.getItem('piscinaRecords')) || []) : [],
     users: cachedApp.users || [],
     services: cachedApp.services || DEFAULT_SERVICES,
     settings: cachedApp.settings || { appName: DEFAULT_APP_NAME },
@@ -441,8 +442,6 @@ async function requestNotificationAccess() {
             .then(subscription => {
                 if (subscription && isRemoteMode() && appState.token) {
                     apiRequest('savePushSubscription', { subscription: subscription.toJSON() }).catch(() => null);
-                } else if (!subscription) {
-                    showAlert('Alertas locales activas. Para avisos con la app cerrada, falta activar el canal Push remoto del servidor.', 'Push pendiente', 'warning');
                 }
             })
             .catch(() => null);
