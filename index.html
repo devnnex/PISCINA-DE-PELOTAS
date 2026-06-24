@@ -3,13 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Piscina de Pelotas</title>
+    <meta name="theme-color" content="#07111f">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title data-app-name>Piscina de Pelotas</title>
     <!-- Apple-like Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://script.google.com">
+    <link rel="dns-prefetch" href="https://script.google.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Phosphor Icons for elegant UI -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="images/logo.png">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,8 +31,8 @@
 
     <main id="login-view" class="login-view">
         <form id="login-form" class="login-card">
-            <img src="images/logo.png" alt="Logo Piscina de Pelotas" class="login-logo">
-            <h1 id="login-title">PISCINA DE PELOTAS</h1>
+            <img src="images/logo.png" alt="Logo" class="login-logo">
+            <h1 id="login-title" data-app-name>PISCINA DE PELOTAS</h1>
             <p id="login-subtitle">Ingresa para gestionar tiempos, registros e ingresos.</p>
             <div class="form-group">
                 <label>Correo</label>
@@ -56,10 +64,15 @@
         <main id="home-view" class="view active">
             <header class="app-header">
                 <div class="brand-lockup">
-                    <img src="images/logo.png" alt="Logo Piscina de Pelotas" class="app-logo">
-                    <h1>PISCINA DE PELOTAS</h1>
+                    <img src="images/logo.png" alt="Logo" class="app-logo">
+                    <h1 data-app-name>PISCINA DE PELOTAS</h1>
                 </div>
                 <div class="header-actions">
+                    <span class="session-chip" data-session-user></span>
+                    <button id="notification-toggle-btn" class="notify-btn" type="button" aria-label="Activar notificaciones">
+                        <i class="ph ph-bell-ringing"></i>
+                        <span>Alertas</span>
+                    </button>
                     <button id="theme-toggle-btn" class="icon-btn subtle" aria-label="Cambiar modo">
                         <i class="ph ph-moon"></i>
                     </button>
@@ -86,11 +99,7 @@
                     </div>
                     <div class="form-group">
                         <label>Tiempo y Valor</label>
-                        <select id="time-select" required>
-                            <option value="15|5000">15 Minutos - $5.000</option>
-                            <option value="30|8000" selected>30 Minutos - $8.000</option>
-                            <option value="60|15000">1 Hora - $15.000</option>
-                        </select>
+                        <select id="time-select" required></select>
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" id="cancel-add">Cancelar</button>
@@ -133,6 +142,7 @@
             <header class="app-header">
                 <h1>Panel Administrativo</h1>
                 <div class="header-actions">
+                    <span class="session-chip" data-session-user></span>
                     <button id="admin-theme-toggle-btn" class="icon-btn subtle" aria-label="Cambiar modo">
                         <i class="ph ph-moon"></i>
                     </button>
@@ -143,6 +153,7 @@
             </header>
 
             <div class="admin-dashboard">
+                <div class="admin-side-stack">
                 <div class="stats-container">
                     <div class="stat-card">
                         <i class="ph ph-coins text-dark-blue"></i>
@@ -159,6 +170,59 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="system-section">
+                    <button id="system-toggle" class="users-toggle" type="button">
+                        <span><i class="ph ph-shield-check"></i> Marca, seguridad y tarifas</span>
+                        <i class="ph ph-caret-down"></i>
+                    </button>
+                    <div id="system-panel" class="users-panel">
+                        <form id="settings-form" class="settings-form">
+                            <div class="form-group">
+                                <label>Nombre de la app</label>
+                                <input type="text" id="app-name-input" required maxlength="48" placeholder="Nombre comercial">
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="settings-submit-btn">Actualizar nombre</button>
+                            <div id="settings-save-feedback" class="settings-save-feedback" aria-live="polite">
+                                <i class="ph ph-check-circle"></i>
+                                <span>Nombre actualizado</span>
+                            </div>
+                        </form>
+                        <div class="security-stack">
+                            <div><i class="ph ph-key"></i><span>Acceso protegido</span></div>
+                            <div><i class="ph ph-lock-key"></i><span>Clave blindada</span></div>
+                            <div><i class="ph ph-user-focus"></i><span>Control por roles</span></div>
+                            <div><i class="ph ph-cloud-check"></i><span>Sincronización rápida</span></div>
+                        </div>
+                        <form id="service-form" class="service-form">
+                            <input type="hidden" id="service-id">
+                            <input type="text" id="service-name" required placeholder="Servicio, ej. Media hora">
+                            <input type="number" id="service-duration" required min="1" placeholder="Minutos">
+                            <input type="text" id="service-price" required inputmode="numeric" autocomplete="off" placeholder="Valor COP">
+                            <div class="service-form-actions">
+                                <button type="button" class="btn btn-secondary" id="cancel-service-edit">Cancelar</button>
+                                <button type="submit" class="btn btn-primary">Guardar tarifa</button>
+                            </div>
+                        </form>
+                        <div id="services-list" class="services-list"></div>
+                    </div>
+                </div>
+
+                <div class="users-section">
+                    <button id="users-toggle" class="users-toggle" type="button">
+                        <span><i class="ph ph-user-gear"></i> Gestionar usuarios</span>
+                        <i class="ph ph-caret-down"></i>
+                    </button>
+                    <div id="users-panel" class="users-panel">
+                        <form id="user-form" class="user-form">
+                            <input type="email" id="user-email" required placeholder="correo@empresa.com">
+                            <input type="password" id="user-password" required placeholder="Contraseña">
+                            <button type="submit" class="btn btn-primary">Crear usuario</button>
+                        </form>
+                        <div id="users-list" class="users-list"></div>
+                    </div>
+                </div>
+            </div>
 
                 <div class="history-section">
                     <div class="history-header">
@@ -194,20 +258,6 @@
                     </div>
                 </div>
 
-                <div class="users-section">
-                    <button id="users-toggle" class="users-toggle" type="button">
-                        <span><i class="ph ph-user-gear"></i> Gestionar usuarios</span>
-                        <i class="ph ph-caret-down"></i>
-                    </button>
-                    <div id="users-panel" class="users-panel">
-                        <form id="user-form" class="user-form">
-                            <input type="email" id="user-email" required placeholder="correo@empresa.com">
-                            <input type="password" id="user-password" required placeholder="Contraseña">
-                            <button type="submit" class="btn btn-primary">Crear usuario</button>
-                        </form>
-                        <div id="users-list" class="users-list"></div>
-                    </div>
-                </div>
             </div>
 
             <button id="assistant-launcher" class="assistant-launcher" type="button" aria-label="Abrir Assistente">
@@ -225,7 +275,13 @@
                     <button type="button" data-assistant-action="summary"><i class="ph ph-chart-line-up"></i><span>Resumen</span></button>
                     <button type="button" data-assistant-action="active"><i class="ph ph-timer"></i><span>En piscina</span></button>
                     <button type="button" data-assistant-action="income"><i class="ph ph-coins"></i><span>Ingresos</span></button>
+                    <button type="button" data-assistant-action="range"><i class="ph ph-calendar-dots"></i><span>Fechas</span></button>
                     <button type="button" data-assistant-action="invoice"><i class="ph ph-printer"></i><span>Factura</span></button>
+                </div>
+                <div id="assistant-range-panel" class="assistant-range-panel" hidden>
+                    <input id="assistant-date-from" type="date" aria-label="Fecha inicial">
+                    <input id="assistant-date-to" type="date" aria-label="Fecha final">
+                    <button id="assistant-range-run" type="button">Analizar</button>
                 </div>
                 <div id="assistant-messages" class="assistant-messages" aria-live="polite"></div>
                 <form id="assistant-form" class="assistant-form">
@@ -266,8 +322,32 @@
                 </form>
             </div>
         </div>
+
+        <div id="system-modal" class="modal-overlay system-modal-overlay" style="display: none;">
+            <div class="system-modal">
+                <div class="system-modal-icon"><i class="ph ph-shield-check"></i></div>
+                <h2 id="system-modal-title">Confirmar</h2>
+                <p id="system-modal-message"></p>
+                <div id="system-modal-actions" class="system-modal-actions"></div>
+            </div>
+        </div>
+
+        <div id="password-modal" class="modal-overlay system-modal-overlay password-modal-overlay" style="display: none;">
+            <div class="system-modal password-modal">
+                <button id="password-modal-close" class="icon-btn subtle password-modal-close" type="button" aria-label="Cerrar"><i class="ph ph-x"></i></button>
+                <div class="system-modal-icon"><i class="ph ph-lock-key"></i></div>
+                <h2>Cambiar clave</h2>
+                <p>Actualiza tu acceso de forma privada.</p>
+                <form id="password-change-form" class="password-change-form">
+                    <input type="password" id="password-current" required autocomplete="current-password" placeholder="Clave actual">
+                    <input type="password" id="password-new" required autocomplete="new-password" minlength="4" placeholder="Clave nueva">
+                    <button type="submit" class="btn btn-primary">Guardar clave</button>
+                </form>
+            </div>
+        </div>
     </div>
     
     <script src="app.js"></script>
 </body>
 </html>
+
