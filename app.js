@@ -21,7 +21,7 @@ let appState = {
     settings: cachedApp.settings || { appName: DEFAULT_APP_NAME },
     cacheUpdatedAt: Number(cachedApp.updatedAt || 0),
     token: localStorage.getItem('piscinaToken') || '',
-    currentUser: cachedApp.currentUser || null,
+    currentUser: USE_LOCAL_RECORD_CACHE ? (cachedApp.currentUser || null) : null,
     needsSetup: false,
     activeSearchTerm: '',
     activePage: 1,
@@ -656,11 +656,13 @@ async function bootstrapApp() {
         applyRemoteState(result);
         setAuthenticated(true);
     } catch (err) {
-        if (!appState.records.length && !appState.currentUser) {
-            localStorage.removeItem('piscinaToken');
-            appState.token = '';
-            setAuthenticated(false);
-        }
+        localStorage.removeItem('piscinaToken');
+        appState.token = '';
+        appState.currentUser = null;
+        appState.records = [];
+        setAuthenticated(false);
+        renderLoginMode();
+        if (loginError) loginError.textContent = err.message;
         updateSyncStatus();
     } finally {
         setLoading(false);
