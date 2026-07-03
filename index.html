@@ -82,6 +82,14 @@
                 </div>
             </header>
 
+            <div class="section-switcher" aria-label="Juegos activos">
+                <div>
+                    <span class="section-kicker">Juego actual</span>
+                    <strong id="current-section-label">Piscina de pelotas</strong>
+                </div>
+                <div id="section-tabs" class="section-tabs"></div>
+            </div>
+
             <div class="registration-form-container" id="reg-form-container" style="display: none;">
                 <form id="add-kid-form" class="card form-card">
                     <h2>Nuevo Ingreso</h2>
@@ -152,6 +160,14 @@
                 </div>
             </header>
 
+            <div class="section-switcher admin-section-switcher" aria-label="Juegos activos">
+                <div>
+                    <span class="section-kicker">Administrando</span>
+                    <strong id="admin-current-section-label">Piscina de pelotas</strong>
+                </div>
+                <div id="admin-section-tabs" class="section-tabs"></div>
+            </div>
+
             <div class="admin-dashboard">
                 <div class="admin-side-stack">
                 <div class="stats-container">
@@ -205,6 +221,22 @@
                             </div>
                         </form>
                         <div id="services-list" class="services-list"></div>
+                        <div class="section-admin-block">
+                            <div class="section-admin-heading">
+                                <strong>Juegos o secciones</strong>
+                                <span>Hasta 5 espacios. La clave es opcional.</span>
+                            </div>
+                            <form id="section-form" class="service-form section-form">
+                                <input type="hidden" id="section-id">
+                                <input type="text" id="section-name" required maxlength="36" placeholder="Nombre del juego">
+                                <input type="password" id="section-password" autocomplete="new-password" placeholder="Clave opcional">
+                                <div class="service-form-actions">
+                                    <button type="button" class="btn btn-secondary" id="cancel-section-edit">Cancelar</button>
+                                    <button type="submit" class="btn btn-primary">Guardar sección</button>
+                                </div>
+                            </form>
+                            <div id="sections-list" class="services-list"></div>
+                        </div>
                     </div>
                 </div>
 
