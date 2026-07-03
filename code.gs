@@ -2,6 +2,7 @@ const SHEETS = {
   users: 'Users',
   records: 'Records',
   services: 'Services',
+  sections: 'Sections',
   settings: 'Settings',
   pushSubscriptions: 'PushSubscriptions'
 };
@@ -34,7 +35,7 @@ function handleRequest_(e) {
 
     switch (action) {
       case 'bootstrap':
-        return json_({ ok: true, needsSetup: false, user: publicUser_(user), records: getRecords_(), users: getUsers_().map(publicUser_), settings: getSettings_(), services: getServices_() });
+        return json_({ ok: true, needsSetup: false, user: publicUser_(user), records: getRecords_(), users: getUsers_().map(publicUser_), settings: getSettings_(), services: getServices_(), sections: getSections_() });
       case 'createRecord':
         touchUser_(user);
         return json_({ ok: true, record: createRecord_(payload.record) });
@@ -86,6 +87,18 @@ function handleRequest_(e) {
         touchUser_(user);
         deleteService_(payload.id);
         return json_({ ok: true, services: getServices_() });
+      case 'saveSection':
+        requireAdmin_(user);
+        touchUser_(user);
+        return json_({ ok: true, sections: getSectionsAfterSave_(payload.section || {}) });
+      case 'deleteSection':
+        requireAdmin_(user);
+        touchUser_(user);
+        deleteSection_(payload.id);
+        return json_({ ok: true, sections: getSections_() });
+      case 'verifySectionPassword':
+        touchUser_(user);
+        return json_({ ok: true, valid: verifySectionPassword_(payload.id, payload.password) });
       case 'savePushSubscription':
         touchUser_(user);
         return json_({ ok: true, subscription: savePushSubscription_(payload.subscription, user) });
@@ -132,17 +145,18 @@ function setup_() {
   if (SETUP_READY) return;
   const props = PropertiesService.getScriptProperties();
   const ss = SpreadsheetApp.getActive();
-  if (props.getProperty('PISCINA_SETUP_SEEDED_V3') === 'true') {
+  if (props.getProperty('PISCINA_SETUP_SEEDED_V4') === 'true') {
     SETUP_READY = true;
     return;
   }
   ensureSheet_(ss, SHEETS.users, ['id', 'email', 'passwordHash', 'role', 'active', 'createdAt', 'lastLoginAt', 'token', 'tokenExpiresAt', 'activityCount', 'lastActivityAt']);
-  ensureSheet_(ss, SHEETS.records, ['id', 'kidName', 'parentName', 'parentPhone', 'durationMinutes', 'price', 'startTime', 'endTime', 'isActive', 'createdAt', 'updatedAt', 'serviceId', 'serviceName']);
+  ensureSheet_(ss, SHEETS.records, ['id', 'kidName', 'parentName', 'parentPhone', 'durationMinutes', 'price', 'startTime', 'endTime', 'isActive', 'createdAt', 'updatedAt', 'serviceId', 'serviceName', 'sectionId', 'sectionName']);
   ensureSheet_(ss, SHEETS.services, ['id', 'name', 'durationMinutes', 'price', 'active', 'createdAt', 'updatedAt']);
+  ensureSheet_(ss, SHEETS.sections, ['id', 'name', 'active', 'passwordHash', 'createdAt', 'updatedAt']);
   ensureSheet_(ss, SHEETS.settings, ['key', 'value', 'updatedAt']);
   ensureSheet_(ss, SHEETS.pushSubscriptions, ['endpoint', 'subscriptionJson', 'userId', 'createdAt', 'updatedAt', 'active']);
   seedDefaults_();
-  props.setProperty('PISCINA_SETUP_SEEDED_V3', 'true');
+  props.setProperty('PISCINA_SETUP_SEEDED_V4', 'true');
   SETUP_READY = true;
 }
 
@@ -167,6 +181,9 @@ function seedDefaults_() {
   }
   const settings = getSettings_();
   if (!settings.appName) saveSettings_({ appName: 'PISCINA DE PELOTAS' });
+  if (getSections_().length === 0) {
+    saveSection_({ id: 'game_pool', name: 'Piscina de pelotas', active: true });
+  }
 }
 
 function touchUser_(user) {
@@ -243,7 +260,7 @@ function login_(payload) {
     if (payload.fast === true) {
       return { ok: true, needsSetup: false, token: firstAdmin.token, user: publicUser_(firstAdmin) };
     }
-    return { ok: true, needsSetup: false, token: firstAdmin.token, user: publicUser_(firstAdmin), records: getRecords_(), users: getUsers_().map(publicUser_), settings: getSettings_(), services: getServices_() };
+    return { ok: true, needsSetup: false, token: firstAdmin.token, user: publicUser_(firstAdmin), records: getRecords_(), users: getUsers_().map(publicUser_), settings: getSettings_(), services: getServices_(), sections: getSections_() };
   }
 
   const user = users.find(u => String(u.email).toLowerCase() === email);
@@ -258,7 +275,7 @@ function login_(payload) {
   if (payload.fast === true) {
     return { ok: true, needsSetup: false, token: user.token, user: publicUser_(user) };
   }
-  return { ok: true, needsSetup: false, token: user.token, user: publicUser_(user), records: getRecords_(), users: getUsers_().map(publicUser_), settings: getSettings_(), services: getServices_() };
+  return { ok: true, needsSetup: false, token: user.token, user: publicUser_(user), records: getRecords_(), users: getUsers_().map(publicUser_), settings: getSettings_(), services: getServices_(), sections: getSections_() };
 }
 
 function requireAuth_(token) {
@@ -351,6 +368,66 @@ function deleteService_(id) {
   return id;
 }
 
+function getSections_() {
+  return rows_(SHEETS.sections).map(section => ({
+    id: section.id,
+    name: section.name,
+    active: section.active === true || section.active === 'TRUE' || section.active === 'true',
+    hasPassword: !!section.passwordHash,
+    createdAt: Number(section.createdAt || 0),
+    updatedAt: Number(section.updatedAt || 0)
+  })).filter(section => section.id && section.name).slice(0, 5);
+}
+
+function getSectionById_(id) {
+  return rows_(SHEETS.sections).find(section => section.id === id);
+}
+
+function getDefaultSection_() {
+  return getSections_()[0] || { id: 'game_pool', name: 'Piscina de pelotas', active: true };
+}
+
+function getSectionsAfterSave_(input) {
+  saveSection_(input);
+  return getSections_();
+}
+
+function saveSection_(input) {
+  const now = Date.now();
+  const existing = input.id ? getSectionById_(input.id) : null;
+  if (!existing && getSections_().length >= 5) throw new Error('Maximo 5 secciones');
+  const section = {
+    id: String(input.id || uid_('game')),
+    name: String(input.name || '').trim().slice(0, 36),
+    active: input.active === undefined ? true : !!input.active,
+    passwordHash: String(input.password ? hash_(input.password) : input.passwordHash || existing && existing.passwordHash || ''),
+    createdAt: Number(existing && existing.createdAt || input.createdAt || now),
+    updatedAt: now
+  };
+  if (!section.name) throw new Error('Nombre de seccion requerido');
+  if (existing) writeRow_(SHEETS.sections, existing._row, section);
+  else appendObj_(SHEETS.sections, section);
+  return section;
+}
+
+function deleteSection_(id) {
+  const sections = getSections_();
+  if (sections.length <= 1) throw new Error('Debe existir al menos una seccion');
+  if (getRecords_().some(record => record.sectionId === id)) throw new Error('La seccion tiene registros');
+  const section = getSectionById_(id);
+  if (!section) throw new Error('Seccion no encontrada');
+  SpreadsheetApp.getActive().getSheetByName(SHEETS.sections).deleteRow(section._row);
+  return id;
+}
+
+function verifySectionPassword_(id, password) {
+  const section = getSectionById_(id);
+  if (!section) throw new Error('Seccion no encontrada');
+  const hash = String(section.passwordHash || '');
+  if (!hash) return true;
+  return hash === hash_(String(password || ''));
+}
+
 function createUser_(input) {
   const email = String(input && input.email || '').trim().toLowerCase();
   const password = String(input && input.password || '');
@@ -425,13 +502,17 @@ function getRecords_() {
     updatedAt: Number(r.updatedAt || 0)
     ,
     serviceId: r.serviceId || '',
-    serviceName: r.serviceName || ''
+    serviceName: r.serviceName || '',
+    sectionId: r.sectionId || 'game_pool',
+    sectionName: r.sectionName || 'Piscina de pelotas'
   }));
 }
 
 function createRecord_(input) {
   const now = Date.now();
   const service = input.serviceId ? getServices_().find(item => item.id === input.serviceId && item.active) : null;
+  const section = input.sectionId ? getSections_().find(item => item.id === input.sectionId && item.active) : getDefaultSection_();
+  if (input.sectionId && !section) throw new Error('Seccion no valida');
   const record = {
     id: input.id || uid_('rec'),
     kidName: String(input.kidName || '').trim(),
@@ -445,7 +526,9 @@ function createRecord_(input) {
     createdAt: now,
     updatedAt: now,
     serviceId: service ? service.id : String(input.serviceId || ''),
-    serviceName: service ? service.name : String(input.serviceName || '').trim()
+    serviceName: service ? service.name : String(input.serviceName || '').trim(),
+    sectionId: section ? section.id : 'game_pool',
+    sectionName: section ? section.name : 'Piscina de pelotas'
   };
   record.endTime = record.startTime + (record.durationMinutes * 60 * 1000);
   appendObj_(SHEETS.records, record);
@@ -455,9 +538,15 @@ function createRecord_(input) {
 function updateRecord_(input) {
   const record = rows_(SHEETS.records).find(r => r.id === input.id);
   if (!record) throw new Error('Registro no encontrado');
-  ['kidName', 'parentName', 'parentPhone', 'durationMinutes', 'startTime', 'endTime', 'isActive'].forEach(key => {
+  ['kidName', 'parentName', 'parentPhone', 'durationMinutes', 'startTime', 'endTime', 'isActive', 'sectionId', 'sectionName'].forEach(key => {
     if (input[key] !== undefined) record[key] = input[key];
   });
+  if (input.sectionId && input.sectionId !== record.sectionId) {
+    const section = getSections_().find(item => item.id === input.sectionId && item.active);
+    if (!section) throw new Error('Seccion no valida');
+    record.sectionId = section.id;
+    record.sectionName = section.name;
+  }
   if (input.serviceId && input.serviceId !== record.serviceId) {
     const service = getServices_().find(item => item.id === input.serviceId && item.active);
     if (!service) throw new Error('Tarifa no valida');
