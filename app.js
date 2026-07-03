@@ -1,13 +1,17 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbxKnu-V51U3FRIwnYyveHGbhAnWSmu38VlL8_pRq5stMPkTTb1-GBtaynhjz9kGPg8PqQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbw7_opzWDYDFePHCTpjC9UMohlqR5UGPKqBf1UdaWyOsUprHUOfMJTfyByKW-L05ckcXQ/exec';
 const APP_CACHE_KEY = 'piscinaAppCacheV2';
 const NOTIFICATION_PREF_KEY = 'piscinaNotificationsEnabled';
 const PUSH_PUBLIC_KEY = '';
 const API_TIMEOUT_MS = 18000;
 const DEFAULT_APP_NAME = 'PISCINA DE PELOTAS';
+const DEFAULT_SECTION_ID = 'game_pool';
 const DEFAULT_SERVICES = [
     { id: 'svc_15', name: '15 Minutos', durationMinutes: 15, price: 5000, active: true },
     { id: 'svc_30', name: '30 Minutos', durationMinutes: 30, price: 8000, active: true },
     { id: 'svc_60', name: '1 Hora', durationMinutes: 60, price: 15000, active: true }
+];
+const DEFAULT_SECTIONS = [
+    { id: DEFAULT_SECTION_ID, name: 'Piscina de pelotas', active: true, passwordHash: '', hasPassword: false }
 ];
 const cachedApp = JSON.parse(localStorage.getItem(APP_CACHE_KEY) || '{}');
 let runtimePushPublicKey = PUSH_PUBLIC_KEY;
@@ -18,10 +22,12 @@ let appState = {
     records: USE_LOCAL_RECORD_CACHE ? (cachedApp.records || JSON.parse(localStorage.getItem('piscinaRecords')) || []) : [],
     users: cachedApp.users || [],
     services: cachedApp.services || DEFAULT_SERVICES,
+    sections: cachedApp.sections || DEFAULT_SECTIONS,
     settings: cachedApp.settings || { appName: DEFAULT_APP_NAME },
     cacheUpdatedAt: Number(cachedApp.updatedAt || 0),
     token: localStorage.getItem('piscinaToken') || '',
     currentUser: USE_LOCAL_RECORD_CACHE ? (cachedApp.currentUser || null) : null,
+    activeSectionId: localStorage.getItem('piscinaActiveSectionId') || cachedApp.activeSectionId || DEFAULT_SECTION_ID,
     needsSetup: false,
     activeSearchTerm: '',
     activePage: 1,
@@ -48,8 +54,10 @@ function saveAppCache() {
         records: appState.records,
         users: appState.users,
         services: appState.services,
+        sections: appState.sections,
         settings: appState.settings,
         currentUser: appState.currentUser,
+        activeSectionId: appState.activeSectionId,
         updatedAt: Date.now()
     }));
 }
@@ -136,8 +144,18 @@ function applyRemoteState(result) {
         appState.needsSetup = !!result.needsSetup;
         renderLoginMode();
     }
+    if (result.sections) {
+        appState.sections = normalizeSections(result.sections);
+        ensureActiveSection();
+        renderSectionSwitcher();
+        renderSections();
+    }
     if (result.records) {
-        appState.records = result.records;
+        appState.records = result.records.map(record => ({
+            ...record,
+            sectionId: record.sectionId || DEFAULT_SECTION_ID,
+            sectionName: record.sectionName || getSectionName(record.sectionId || DEFAULT_SECTION_ID)
+        }));
         const pendingFinishIds = new Set(appState.finishQueue.map(item => item.id));
         appState.records.forEach(record => {
             if (pendingFinishIds.has(record.id)) record.isActive = false;
@@ -219,6 +237,16 @@ const serviceDurationInput = document.getElementById('service-duration');
 const servicePriceInput = document.getElementById('service-price');
 const cancelServiceEditBtn = document.getElementById('cancel-service-edit');
 const servicesList = document.getElementById('services-list');
+const sectionForm = document.getElementById('section-form');
+const sectionIdInput = document.getElementById('section-id');
+const sectionNameInput = document.getElementById('section-name');
+const sectionPasswordInput = document.getElementById('section-password');
+const cancelSectionEditBtn = document.getElementById('cancel-section-edit');
+const sectionsList = document.getElementById('sections-list');
+const sectionTabs = document.getElementById('section-tabs');
+const adminSectionTabs = document.getElementById('admin-section-tabs');
+const currentSectionLabel = document.getElementById('current-section-label');
+const adminCurrentSectionLabel = document.getElementById('admin-current-section-label');
 const systemModal = document.getElementById('system-modal');
 const systemModalTitle = document.getElementById('system-modal-title');
 const systemModalMessage = document.getElementById('system-modal-message');
@@ -238,8 +266,12 @@ async function init() {
     registerServiceWorker();
     applyTheme();
     applyBranding();
+    appState.sections = normalizeSections(appState.sections);
+    ensureActiveSection();
+    renderSectionSwitcher();
     renderServiceOptions();
     renderServices();
+    renderSections();
     renderUsers();
     setupThemeToggle();
     setupNotifications();
@@ -256,6 +288,7 @@ async function init() {
     setupAssistant();
     startGlobalTimer();
     await bootstrapApp();
+    await ensureUnlockedActiveSection();
     renderActiveKids();
     updateAdminDashboard('today');
     processFinishQueue();
@@ -334,6 +367,149 @@ function normalizeServices(services) {
     })).filter(service => service.durationMinutes > 0);
 }
 
+function normalizeSections(sections) {
+    const source = Array.isArray(sections) && sections.length ? sections : DEFAULT_SECTIONS;
+    const normalized = source.map((section, index) => ({
+        id: String(section.id || `game_${Date.now()}_${index}`).trim(),
+        name: String(section.name || `Juego ${index + 1}`).trim().slice(0, 36),
+        active: section.active === undefined || section.active === true || section.active === 'TRUE' || section.active === 'true',
+        passwordHash: String(section.passwordHash || ''),
+        hasPassword: !!section.hasPassword || !!section.passwordHash,
+        createdAt: Number(section.createdAt || 0),
+        updatedAt: Number(section.updatedAt || 0)
+    })).filter(section => section.id && section.name).slice(0, 5);
+    return normalized.length ? normalized : DEFAULT_SECTIONS;
+}
+
+function getActiveSections() {
+    const sections = normalizeSections(appState.sections).filter(section => section.active);
+    return sections.length ? sections : [normalizeSections(appState.sections)[0]];
+}
+
+function getCurrentSection() {
+    return getActiveSections().find(section => section.id === appState.activeSectionId) || getActiveSections()[0];
+}
+
+function getSectionName(sectionId = appState.activeSectionId) {
+    const section = normalizeSections(appState.sections).find(item => item.id === sectionId) || DEFAULT_SECTIONS[0];
+    return section.name;
+}
+
+function ensureActiveSection() {
+    appState.sections = normalizeSections(appState.sections);
+    const activeSections = getActiveSections();
+    if (!activeSections.some(section => section.id === appState.activeSectionId)) {
+        appState.activeSectionId = activeSections[0]?.id || DEFAULT_SECTION_ID;
+    }
+    localStorage.setItem('piscinaActiveSectionId', appState.activeSectionId);
+}
+
+function getRecordSectionId(record) {
+    return String(record.sectionId || DEFAULT_SECTION_ID);
+}
+
+function isRecordInCurrentSection(record) {
+    return getRecordSectionId(record) === appState.activeSectionId;
+}
+
+function getCurrentSectionRecords() {
+    return appState.records.filter(isRecordInCurrentSection);
+}
+
+function sectionUnlockKey(id) {
+    return `piscinaSectionUnlocked:${id}`;
+}
+
+function isSectionUnlocked(section) {
+    return !(section.hasPassword || section.passwordHash) || sessionStorage.getItem(sectionUnlockKey(section.id)) === 'true';
+}
+
+async function hashSectionPassword(value) {
+    const password = String(value || '').trim();
+    if (!password) return '';
+    if (window.crypto?.subtle && window.TextEncoder) {
+        const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
+        return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+    let hash = 0;
+    for (let index = 0; index < password.length; index += 1) hash = ((hash << 5) - hash + password.charCodeAt(index)) | 0;
+    return `fallback_${Math.abs(hash)}`;
+}
+
+async function verifySectionPassword(section, password) {
+    if (!(section.hasPassword || section.passwordHash)) return true;
+    if (isRemoteMode()) {
+        const result = await apiRequest('verifySectionPassword', { id: section.id, password });
+        return !!result.valid;
+    }
+    return section.passwordHash && section.passwordHash === await hashSectionPassword(password);
+}
+
+async function requestSectionAccess(section) {
+    if (isSectionUnlocked(section)) return true;
+    const password = window.prompt(`Clave para ${section.name}`);
+    if (!password) return false;
+    try {
+        const valid = await verifySectionPassword(section, password);
+        if (!valid) {
+            showAlert('La clave de esta sección no coincide.', 'Acceso denegado', 'warning');
+            return false;
+        }
+        sessionStorage.setItem(sectionUnlockKey(section.id), 'true');
+        return true;
+    } catch (error) {
+        showAlert(error.message, 'No se pudo validar', 'danger');
+        return false;
+    }
+}
+
+async function switchSection(id) {
+    const section = getActiveSections().find(item => item.id === id);
+    if (!section) return;
+    if (!await requestSectionAccess(section)) return;
+    appState.activeSectionId = section.id;
+    appState.activePage = 1;
+    appState.activeSearchTerm = '';
+    if (activeSearchInput) activeSearchInput.value = '';
+    localStorage.setItem('piscinaActiveSectionId', section.id);
+    renderSectionSwitcher();
+    renderActiveKids();
+    updateAdminDashboard(getCurrentHistoryFilterType());
+    saveAppCache();
+}
+
+async function ensureUnlockedActiveSection() {
+    const current = getCurrentSection();
+    if (isSectionUnlocked(current)) return;
+    const fallback = getActiveSections().find(section => !(section.hasPassword || section.passwordHash));
+    if (fallback && fallback.id !== current.id) {
+        appState.activeSectionId = fallback.id;
+        localStorage.setItem('piscinaActiveSectionId', fallback.id);
+        renderSectionSwitcher();
+        return;
+    }
+    await requestSectionAccess(current);
+}
+
+function renderSectionSwitcher() {
+    ensureActiveSection();
+    const activeSections = getActiveSections();
+    const renderTabs = (container) => {
+        if (!container) return;
+        container.innerHTML = activeSections.map(section => `
+            <button type="button" class="section-tab ${section.id === appState.activeSectionId ? 'active' : ''}" onclick="switchSection('${section.id}')">
+                <i class="ph ${section.hasPassword || section.passwordHash ? 'ph-lock-key' : 'ph-game-controller'}"></i>
+                <span>${escapeHTML(section.name)}</span>
+            </button>
+        `).join('');
+    };
+    renderTabs(sectionTabs);
+    renderTabs(adminSectionTabs);
+    const label = getSectionName();
+    if (currentSectionLabel) currentSectionLabel.textContent = label;
+    if (adminCurrentSectionLabel) adminCurrentSectionLabel.textContent = label;
+}
+
 function renderServiceOptions() {
     if (!timeSelect) return;
     const activeServices = normalizeServices(appState.services).filter(service => service.active);
@@ -371,6 +547,26 @@ function renderServices() {
                     <i class="ph ${service.active ? 'ph-eye-slash' : 'ph-eye'}"></i>
                 </button>
                 <button type="button" onclick="deleteService('${service.id}')" aria-label="Eliminar tarifa"><i class="ph ph-trash"></i></button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderSections() {
+    if (!sectionsList) return;
+    const sections = normalizeSections(appState.sections);
+    sectionsList.innerHTML = sections.map(section => `
+        <div class="service-item section-item ${section.active ? '' : 'inactive'}">
+            <div>
+                <strong>${escapeHTML(section.name)}</strong>
+                <span>${section.active ? 'Visible' : 'Oculta'} • ${section.hasPassword || section.passwordHash ? 'Con clave' : 'Sin clave'}</span>
+            </div>
+            <div class="service-actions">
+                <button type="button" onclick="editSection('${section.id}')" aria-label="Editar sección"><i class="ph ph-pencil-simple"></i></button>
+                <button type="button" onclick="toggleSection('${section.id}', ${!section.active})" aria-label="${section.active ? 'Ocultar' : 'Activar'} sección">
+                    <i class="ph ${section.active ? 'ph-eye-slash' : 'ph-eye'}"></i>
+                </button>
+                <button type="button" onclick="deleteSection('${section.id}')" aria-label="Eliminar sección"><i class="ph ph-trash"></i></button>
             </div>
         </div>
     `).join('');
@@ -614,8 +810,9 @@ function renderLoginMode() {
 
 function queueBackgroundBootstrap(delay = 120) {
     setTimeout(() => {
-        apiRequest('bootstrap').then(remote => {
+        apiRequest('bootstrap').then(async remote => {
             applyRemoteState(remote);
+            await ensureUnlockedActiveSection();
             renderActiveKids();
             updateAdminDashboard(getCurrentHistoryFilterType());
             processFinishQueue();
@@ -627,7 +824,7 @@ async function bootstrapApp() {
     if (!isRemoteMode()) {
         appState.currentUser = { email: 'local', role: 'admin', active: true };
         setAuthenticated(true);
-        applyRemoteState({ services: appState.services, settings: appState.settings });
+        applyRemoteState({ services: appState.services, sections: appState.sections, settings: appState.settings });
         return;
     }
 
@@ -685,6 +882,7 @@ function setupAuth() {
             localStorage.setItem('piscinaToken', result.token);
             applyRemoteState(result);
             setAuthenticated(true);
+            await ensureUnlockedActiveSection();
             renderActiveKids();
             updateAdminDashboard('today');
             queueBackgroundBootstrap();
@@ -954,12 +1152,48 @@ function setupSystemAdmin() {
     }
 
     if (cancelServiceEditBtn) cancelServiceEditBtn.addEventListener('click', resetServiceForm);
+    if (sectionForm) {
+        sectionForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!guardAdminAction()) return;
+            const existing = appState.sections.find(item => item.id === sectionIdInput.value);
+            if (!existing && normalizeSections(appState.sections).length >= 5) {
+                showAlert('Puedes manejar máximo 5 juegos o secciones.', 'Límite alcanzado', 'warning');
+                return;
+            }
+            const password = sectionPasswordInput.value.trim();
+            const section = {
+                id: sectionIdInput.value || `game_${Date.now()}`,
+                name: sectionNameInput.value.trim(),
+                active: existing ? existing.active : true
+            };
+            if (!section.name) return;
+            if (password) {
+                section.password = password;
+                section.passwordHash = await hashSectionPassword(password);
+                section.hasPassword = true;
+            } else if (existing) {
+                section.passwordHash = existing.passwordHash || '';
+                section.hasPassword = !!(existing.hasPassword || existing.passwordHash);
+            }
+            await saveSection(section);
+            animateButtonSuccess(sectionForm.querySelector('button[type="submit"]'), 'Guardada');
+            resetSectionForm();
+        });
+    }
+    if (cancelSectionEditBtn) cancelSectionEditBtn.addEventListener('click', resetSectionForm);
 }
 
 function resetServiceForm() {
     if (!serviceForm) return;
     serviceForm.reset();
     serviceIdInput.value = '';
+}
+
+function resetSectionForm() {
+    if (!sectionForm) return;
+    sectionForm.reset();
+    sectionIdInput.value = '';
 }
 
 async function saveService(service) {
@@ -980,6 +1214,33 @@ async function saveService(service) {
         appState.services = previous;
         renderServiceOptions();
         renderServices();
+        showAlert(err.message, 'No se pudo guardar', 'danger');
+    }
+}
+
+async function saveSection(section) {
+    if (!guardAdminAction()) return;
+    const previous = [...appState.sections.map(item => ({ ...item }))];
+    const sanitizedSection = { ...section };
+    delete sanitizedSection.password;
+    const index = appState.sections.findIndex(item => item.id === sanitizedSection.id);
+    if (index >= 0) appState.sections[index] = { ...appState.sections[index], ...sanitizedSection, updatedAt: Date.now() };
+    else appState.sections.push({ ...sanitizedSection, createdAt: Date.now(), updatedAt: Date.now() });
+    appState.sections = normalizeSections(appState.sections);
+    ensureActiveSection();
+    renderSectionSwitcher();
+    renderSections();
+    saveAppCache();
+    try {
+        if (isRemoteMode()) {
+            const result = await apiRequest('saveSection', { section });
+            applyRemoteState(result);
+        }
+    } catch (err) {
+        appState.sections = previous;
+        ensureActiveSection();
+        renderSectionSwitcher();
+        renderSections();
         showAlert(err.message, 'No se pudo guardar', 'danger');
     }
 }
@@ -1019,6 +1280,63 @@ window.deleteService = async function(id) {
         appState.services = previous;
         renderServiceOptions();
         renderServices();
+        showAlert(err.message, 'No se pudo eliminar', 'danger');
+    }
+};
+
+window.editSection = function(id) {
+    if (!guardAdminAction()) return;
+    const section = appState.sections.find(item => item.id === id);
+    if (!section) return;
+    sectionIdInput.value = section.id;
+    sectionNameInput.value = section.name;
+    sectionPasswordInput.value = '';
+    sectionPasswordInput.placeholder = section.hasPassword || section.passwordHash ? 'Dejar vacía para conservar clave' : 'Clave opcional';
+    sectionNameInput.focus();
+};
+
+window.toggleSection = async function(id, active) {
+    if (!guardAdminAction()) return;
+    const section = appState.sections.find(item => item.id === id);
+    if (!section) return;
+    const activeCount = normalizeSections(appState.sections).filter(item => item.active).length;
+    if (!active && activeCount <= 1) {
+        showAlert('Debe quedar al menos una sección activa.', 'Sección requerida', 'warning');
+        return;
+    }
+    await saveSection({ ...section, active });
+};
+
+window.deleteSection = async function(id) {
+    if (!guardAdminAction()) return;
+    const sections = normalizeSections(appState.sections);
+    const section = sections.find(item => item.id === id);
+    if (!section) return;
+    if (sections.length <= 1) {
+        showAlert('Debe existir al menos una sección.', 'Sección requerida', 'warning');
+        return;
+    }
+    if (appState.records.some(record => getRecordSectionId(record) === id)) {
+        showAlert('Esta sección tiene registros. Ocúltala si ya no la usarás.', 'No se puede eliminar', 'warning');
+        return;
+    }
+    if (!await confirmAction(`Seguro que deseas eliminar ${section.name}?`, 'Eliminar sección', 'Eliminar', true)) return;
+    const previous = [...appState.sections.map(item => ({ ...item }))];
+    appState.sections = appState.sections.filter(item => item.id !== id);
+    ensureActiveSection();
+    renderSectionSwitcher();
+    renderSections();
+    saveAppCache();
+    try {
+        if (isRemoteMode()) {
+            const result = await apiRequest('deleteSection', { id });
+            applyRemoteState(result);
+        }
+    } catch (err) {
+        appState.sections = previous;
+        ensureActiveSection();
+        renderSectionSwitcher();
+        renderSections();
         showAlert(err.message, 'No se pudo eliminar', 'danger');
     }
 };
@@ -1259,6 +1577,8 @@ function setupForms() {
             price,
             serviceId: selectedService.id,
             serviceName: selectedService.name,
+            sectionId: appState.activeSectionId,
+            sectionName: getSectionName(),
             startTime: now,
             endTime: endTime,
             isActive: true,
@@ -1361,7 +1681,7 @@ function setupActiveSearch() {
 
 // Active Kids Rendering & Timer
 function renderActiveKidsLegacy() {
-    const activeRecords = appState.records.filter(r => r.isActive).sort((a, b) => a.endTime - b.endTime);
+    const activeRecords = getCurrentSectionRecords().filter(r => r.isActive).sort((a, b) => a.endTime - b.endTime);
     activeCount.textContent = activeRecords.length;
     
     if (activeRecords.length === 0) {
@@ -1417,7 +1737,7 @@ function renderActiveKidsLegacy() {
 
 function renderActiveKids() {
     const now = Date.now();
-    const activeRecords = appState.records
+    const activeRecords = getCurrentSectionRecords()
         .filter(r => r.isActive)
         .sort((a, b) => {
             const aExpired = a.endTime <= now;
@@ -1562,8 +1882,8 @@ window.changeActivePage = function(page) {
 function setupBatchSelection() {
     selectExpiredBtn.addEventListener('click', () => {
         appState.selectionMode = true;
-        appState.selectedExpiredIds = new Set(
-            appState.records.filter(record => record.isActive && record.endTime <= Date.now()).map(record => record.id)
+            appState.selectedExpiredIds = new Set(
+            getCurrentSectionRecords().filter(record => record.isActive && record.endTime <= Date.now()).map(record => record.id)
         );
         renderActiveKids();
     });
@@ -1669,7 +1989,7 @@ async function processFinishQueue() {
 function startGlobalTimer() {
     setInterval(() => {
         const now = Date.now();
-        const activeRecords = appState.records.filter(r => r.isActive);
+        const activeRecords = getCurrentSectionRecords().filter(r => r.isActive);
         const newlyExpired = [];
         
         activeRecords.forEach(record => {
@@ -1784,7 +2104,7 @@ function getFilteredHistoryRecords(filterType = getCurrentHistoryFilterType()) {
     
     const searchTerm = searchInput.value;
     
-    return appState.records.filter(r => {
+    return getCurrentSectionRecords().filter(r => {
         // Date Filtering
         let inDateRange = true;
         const recordDate = new Date(r.startTime);
@@ -2326,7 +2646,7 @@ function addAssistantMessage(text, role) {
 function getTodayRecords() {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
-    return appState.records.filter(record => Number(record.startTime) >= start.getTime());
+    return getCurrentSectionRecords().filter(record => Number(record.startTime) >= start.getTime());
 }
 
 function getRecordsByDateRange(fromValue, toValue) {
@@ -2334,7 +2654,7 @@ function getRecordsByDateRange(fromValue, toValue) {
     const from = new Date(`${fromValue}T00:00:00`);
     const to = new Date(`${toValue}T23:59:59.999`);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) return null;
-    return appState.records.filter(record => {
+    return getCurrentSectionRecords().filter(record => {
         const startTime = Number(record.startTime || 0);
         return startTime >= from.getTime() && startTime <= to.getTime();
     });
@@ -2359,7 +2679,7 @@ function getBusinessRangeSummary(fromValue, toValue) {
 
 function runAssistantAction(action) {
     if (action === 'invoice') {
-        const latest = [...appState.records].sort((a, b) => b.startTime - a.startTime)[0];
+        const latest = [...getCurrentSectionRecords()].sort((a, b) => b.startTime - a.startTime)[0];
         if (latest) printReceipt(latest.id);
         else addAssistantMessage('Todavía no hay registros disponibles para imprimir.', 'assistant');
         return;
@@ -2377,7 +2697,7 @@ function runAssistantAction(action) {
 function answerSystemQuestion(question) {
     const q = normalizeSearchText(question);
     const today = getTodayRecords();
-    const active = appState.records.filter(record => record.isActive);
+    const active = getCurrentSectionRecords().filter(record => record.isActive);
     const expired = active.filter(record => record.endTime <= Date.now());
     const income = today.reduce((sum, record) => sum + Number(record.price || 0), 0);
     if (/ingreso|venta|recaud|dinero|cuanto/.test(q)) return `Hoy van ${formatCurrency(income)} en ${today.length} ingresos. El promedio por servicio es ${formatCurrency(today.length ? income / today.length : 0)}.`;
